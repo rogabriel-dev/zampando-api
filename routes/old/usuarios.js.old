@@ -1,0 +1,40 @@
+const express = require('express');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const db = require('../db');
+const router = express.Router();
+
+// Registro
+router.post('/registro', async (req, res) => {
+    const { nombre_usuario, email, password_usuario, telefono, rol_admin } = req.body;
+    try {
+        const hash = await bcrypt.hash(password_usuario, 10);
+        const [result] = await db.execute(
+            `INSERT INTO usuarios (nombre_usuario, email, password_usuario, telefono, rol_admin) VALUES (?, ?, ?, ?, ?)`,
+            [nombre_usuario, email, hash, telefono, rol_admin] // El rol admin tiene que ser falso por defecto
+        );
+        res.status(201).json({ id: result.insertId, email });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Login
+router.post('/login', async (req, res) => {
+    const { email, password_usuario } = req.body;
+    try {
+        const [rows] = await db.execute(`SELECT * FROM usuarios WHERE email = ?`, [email]);
+        if (rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        const usuario = rows[0];
+        const match = await bcrypt.compare(password_usuario, usuario.password_usuario);
+        if(!match) return res.status(401).json({ error: 'Contraseña incorrecta' });
+
+        const token = jwt.sign({ id: usuario.id_usuario, rol: usuario.rol_admin }, process.env.JWT_SECRET, { expiresIn: '1d'});
+        res.json({ token, usuario: { id: usuario.id_usuario, nombre: usuario.nombre_usuario, email: usuario.email, rol_admin: usuario.rol_admin } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+module.exports = router;
